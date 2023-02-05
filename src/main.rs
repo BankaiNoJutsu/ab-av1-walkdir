@@ -1,5 +1,5 @@
 use clap::{Parser};
-use std::{vec::Vec, string::String, env, sync::Arc};
+use std::{vec::Vec, string::String, env, sync::Arc, process::exit};
 use walkdir::WalkDir;
 use serde::{Serialize, Deserialize};
 use std::path::Path;
@@ -30,6 +30,11 @@ fn main() {
     let folder = args.folder;
     let vmaf = args.vmaf;
     let encoder = args.encoder;
+    let codec = "x265".to_string();
+
+    if encoder == "av1" {
+        let codec = "av1".to_string();
+    }
 
     // if folder is not a folder, exit
     if !Path::new(&folder).is_dir() {
@@ -45,7 +50,7 @@ fn main() {
 
     // progressbar setup
     let bar = ProgressBar::new(files.len() as u64);
-    let bar_style = "[frm_cnt][{elapsed_precise}] [{wide_bar:.green/white}] {percent}% {pos:>7}/{len:7} files       eta: {eta:<7}";
+    let bar_style = "[file_count][{elapsed_precise}] [{wide_bar:.green/white}] {percent}% {pos:>7}/{len:7} files       eta: {eta:<7}";
     bar.set_style(
         ProgressStyle::default_bar()
             .template(bar_style)
@@ -70,16 +75,40 @@ fn main() {
             std::process::exit(1);
         } else {
             // run ab-av1 for each file in the folder, with the given vmaf and encoder
-            process_sequential(to_process, vmaf, encoder, bar);
+            process_sequential(to_process, vmaf, encoder, bar, codec);
         }
     } else {
         // run ab-av1 for each file in the folder, with the given vmaf and encoder
-        process_sequential(to_process, vmaf, encoder, bar);
+        process_sequential(to_process, vmaf, encoder, bar, codec);
     }
 }
 
 // function to process all files in a given folder, but wait for each process to finish before starting the next one (sequential)
-pub fn process_sequential(files: Vec<String>, vmaf: i8, encoder: String, bar: ProgressBar) {
+pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, bar: ProgressBar, codec: String) {
+    let mut removed_files = Vec::new();
+    for file in &files {
+        if file.contains(&codec) {
+            let stem = Path::new(&file).file_stem().unwrap().to_str().unwrap().to_string();
+            let extension = Path::new(&file).extension().unwrap().to_str().unwrap().to_string();
+            let directory = Path::new(&file).parent().unwrap().to_str().unwrap().to_string();
+            removed_files.push(format!("{}\\{}.{}", directory, stem.replace(format!(".{}", codec).as_str(), ""), extension));
+            println!("{}", file);
+            removed_files.push(file.to_string());
+            println!("{}", format!("{}\\{}.{}", directory, stem.replace(format!(".{}", codec).as_str(), ""), extension));
+            println!("{}", file);
+        }
+        if file.contains("sample") {
+            removed_files.push(file.to_string());
+        }
+    }
+    // keep only files that are not in the removed_files vector
+    files.retain(|x| !removed_files.contains(x));
+    bar.inc(1);
+/*     // list all in files
+    for file in &files {
+        println!("{}", file);
+    }
+    exit(1); */
     for file in files {
         clear();
         bar.inc(1);
@@ -102,6 +131,8 @@ pub fn process_sequential(files: Vec<String>, vmaf: i8, encoder: String, bar: Pr
         } else {
             // if ab-av1.exe fails with the error containing "Error: Failed to find a suitable crf", lower the vmaf by 1 and try again in a while loop
             '_inner: while output.wait().unwrap().success() == false {
+                // TODO: make this work (is error code different?)
+                // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Os { code: 145, kind: DirectoryNotEmpty, message: "The directory is not empty." }', src\temporary.rs:52:55
                 if output.wait().unwrap().code().unwrap() == 145 {
                     let mut output = std::process::Command::new("ab-av1.exe")
                     .arg("auto-encode")
