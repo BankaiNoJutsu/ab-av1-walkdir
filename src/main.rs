@@ -18,7 +18,7 @@ struct Args {
     #[clap(short, long)]
     folder: String,
     // min vmaf
-    #[clap(short, long, default_value = "97")]
+    #[clap(short, long, default_value = "95")]
     vmaf: i8,
     // encoder
     #[clap(short, long, default_value = "libx265")]
@@ -89,6 +89,8 @@ pub fn process_sequential(files: Vec<String>, vmaf: i8, encoder: String, bar: Pr
             .arg(&file)
             .arg("--min-vmaf")
             .arg(vmaf.to_string())
+            .arg("--acodec")
+            .arg("aac")
             .arg("-e")
             .arg(&encoder)
             .spawn()
