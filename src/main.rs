@@ -102,27 +102,50 @@ pub fn process_sequential(files: Vec<String>, vmaf: i8, encoder: String, bar: Pr
         } else {
             // if ab-av1.exe fails with the error containing "Error: Failed to find a suitable crf", lower the vmaf by 1 and try again in a while loop
             '_inner: while output.wait().unwrap().success() == false {
-                for vmaf_dec in (1..vmaf).rev().step_by(1) {
-                    // if ab-av1.exe fails with the error containing "Error: Failed to find a suitable crf", lower the vmaf by 1 and try again in a while loop
+                if output.wait().unwrap().code().unwrap() == 145 {
                     let mut output = std::process::Command::new("ab-av1.exe")
-                        .arg("auto-encode")
-                        .arg("-i")
-                        .arg(&file)
-                        .arg("--min-vmaf")
-                        .arg((vmaf_dec).to_string())
-                        .arg("-e")
-                        .arg(&encoder)
-                        .spawn()
-                        .expect("failed to execute process");
+                    .arg("auto-encode")
+                    .arg("-i")
+                    .arg(&file)
+                    .arg("--min-vmaf")
+                    .arg(vmaf.to_string())
+                    .arg("--acodec")
+                    .arg("aac")
+                    .arg("-e")
+                    .arg(&encoder)
+                    .spawn()
+                    .expect("failed to execute process");
                     output.wait().expect("failed to wait on child");
                     if output.wait().unwrap().success() {
-                        println!("{}",format!("{} was encoded successfully with VMAF of {}!", file, vmaf_dec).green());
+                        println!("{}",format!("{} was encoded successfully with VMAF of {}!", file, vmaf).green());
                         break '_inner;
                     } else {
-                        println!("{}",format!("{} was not encoded successfully with VMAF of {}! Retrying with VMAF of {}...", file, vmaf_dec, vmaf_dec-1).red());
+                        println!("{}",format!("{} was not encoded successfully with VMAF of {}! Retrying...", file, vmaf).red());
                         continue;
                     }
-                }            
+                } else {
+                    for vmaf_dec in (1..vmaf).rev().step_by(1) {
+                        // if ab-av1.exe fails with the error containing "Error: Failed to find a suitable crf", lower the vmaf by 1 and try again in a while loop
+                        let mut output = std::process::Command::new("ab-av1.exe")
+                            .arg("auto-encode")
+                            .arg("-i")
+                            .arg(&file)
+                            .arg("--min-vmaf")
+                            .arg((vmaf_dec).to_string())
+                            .arg("-e")
+                            .arg(&encoder)
+                            .spawn()
+                            .expect("failed to execute process");
+                        output.wait().expect("failed to wait on child");
+                        if output.wait().unwrap().success() {
+                            println!("{}",format!("{} was encoded successfully with VMAF of {}!", file, vmaf_dec).green());
+                            break '_inner;
+                        } else {
+                            println!("{}",format!("{} was not encoded successfully with VMAF of {}! Retrying with VMAF of {}...", file, vmaf_dec, vmaf_dec-1).red());
+                            continue;
+                        }
+                    }
+                }
             }
         }
     }
