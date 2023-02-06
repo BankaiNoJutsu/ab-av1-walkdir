@@ -1,5 +1,5 @@
 use clap::{Parser};
-use std::{vec::Vec, string::String, env, sync::Arc, process::exit};
+use std::{vec::Vec, string::String, env};
 use walkdir::WalkDir;
 use serde::{Serialize, Deserialize};
 use std::path::Path;
@@ -32,8 +32,17 @@ fn main() {
     let encoder = args.encoder;
     let codec = "x265".to_string();
 
-    if encoder == "av1" {
-        let codec = "av1".to_string();
+    match encoder.as_str() {
+        "libx265" => {
+            let _codec = "x265".to_string();
+        }
+        "av1" => {
+            let _codec = "av1".to_string();
+        }
+        _ => {
+            println!("{} is not a valid encoder!", encoder);
+            std::process::exit(1);
+        }
     }
 
     // if folder is not a folder, exit
@@ -49,6 +58,7 @@ fn main() {
     println!("Found {} files in folder!", files.len());
 
     // progressbar setup
+    // TODO: fix the count of files in the progress bar
     let bar = ProgressBar::new(files.len() as u64);
     let bar_style = "[file_count][{elapsed_precise}] [{wide_bar:.green/white}] {percent}% {pos:>7}/{len:7} files       eta: {eta:<7}";
     bar.set_style(
@@ -58,7 +68,13 @@ fn main() {
             .progress_chars("#>-"),
     );
 
-    clear();
+    let result = clear();
+    match result {
+        Ok(_) => {}
+        Err(e) => {
+            println!("Error: {}", e);
+        }
+    }
 
     // if binary 'ab-av1' is not in the path, exit
     if !std::path::Path::new("ab-av1.exe").exists() {
@@ -92,25 +108,32 @@ pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, bar
             let extension = Path::new(&file).extension().unwrap().to_str().unwrap().to_string();
             let directory = Path::new(&file).parent().unwrap().to_str().unwrap().to_string();
             removed_files.push(format!("{}\\{}.{}", directory, stem.replace(format!(".{}", codec).as_str(), ""), extension));
-            println!("{}", file);
             removed_files.push(file.to_string());
             println!("{}", format!("{}\\{}.{}", directory, stem.replace(format!(".{}", codec).as_str(), ""), extension));
-            println!("{}", file);
         }
         if file.contains("sample") {
+            removed_files.push(file.to_string());
+        }
+        // if file size is less than 1GB, remove it from the files vector
+        if Path::new(&file).metadata().unwrap().len() < 1000000000 {
             removed_files.push(file.to_string());
         }
     }
     // keep only files that are not in the removed_files vector
     files.retain(|x| !removed_files.contains(x));
+
+    // set progress bar to the number of files to process
+    bar.set_length(files.len() as u64);
     bar.inc(1);
-/*     // list all in files
-    for file in &files {
-        println!("{}", file);
-    }
-    exit(1); */
+
     for file in files {
-        clear();
+        let result = clear();
+        match result {
+            Ok(_) => {}
+            Err(e) => {
+                println!("Error: {}", e);
+            }
+        }
         bar.inc(1);
         let mut output = std::process::Command::new("ab-av1.exe")
             .arg("auto-encode")
@@ -127,54 +150,35 @@ pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, bar
         output.wait().expect("failed to wait on child");
         if output.wait().unwrap().success() {
             println!("{}",format!("{} was encoded successfully with VMAF of {}!", file, vmaf).green());
-            clear();
+            let result = clear();
+            match result {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Error: {}", e);
+                }
+            }
         } else {
             // if ab-av1.exe fails with the error containing "Error: Failed to find a suitable crf", lower the vmaf by 1 and try again in a while loop
             '_inner: while output.wait().unwrap().success() == false {
-                // TODO: make this work (is error code different?)
-                // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Os { code: 145, kind: DirectoryNotEmpty, message: "The directory is not empty." }', src\temporary.rs:52:55
-                if output.wait().unwrap().code().unwrap() == 145 {
+                for vmaf_dec in (1..vmaf).rev().step_by(1) {
+                    // if ab-av1.exe fails with the error containing "Error: Failed to find a suitable crf", lower the vmaf by 1 and try again in a while loop
                     let mut output = std::process::Command::new("ab-av1.exe")
-                    .arg("auto-encode")
-                    .arg("-i")
-                    .arg(&file)
-                    .arg("--min-vmaf")
-                    .arg(vmaf.to_string())
-                    .arg("--acodec")
-                    .arg("aac")
-                    .arg("-e")
-                    .arg(&encoder)
-                    .spawn()
-                    .expect("failed to execute process");
+                        .arg("auto-encode")
+                        .arg("-i")
+                        .arg(&file)
+                        .arg("--min-vmaf")
+                        .arg((vmaf_dec).to_string())
+                        .arg("-e")
+                        .arg(&encoder)
+                        .spawn()
+                        .expect("failed to execute process");
                     output.wait().expect("failed to wait on child");
                     if output.wait().unwrap().success() {
-                        println!("{}",format!("{} was encoded successfully with VMAF of {}!", file, vmaf).green());
+                        println!("{}",format!("{} was encoded successfully with VMAF of {}!", file, vmaf_dec).green());
                         break '_inner;
                     } else {
-                        println!("{}",format!("{} was not encoded successfully with VMAF of {}! Retrying...", file, vmaf).red());
+                        println!("{}",format!("{} was not encoded successfully with VMAF of {}! Retrying with VMAF of {}...", file, vmaf_dec, vmaf_dec-1).red());
                         continue;
-                    }
-                } else {
-                    for vmaf_dec in (1..vmaf).rev().step_by(1) {
-                        // if ab-av1.exe fails with the error containing "Error: Failed to find a suitable crf", lower the vmaf by 1 and try again in a while loop
-                        let mut output = std::process::Command::new("ab-av1.exe")
-                            .arg("auto-encode")
-                            .arg("-i")
-                            .arg(&file)
-                            .arg("--min-vmaf")
-                            .arg((vmaf_dec).to_string())
-                            .arg("-e")
-                            .arg(&encoder)
-                            .spawn()
-                            .expect("failed to execute process");
-                        output.wait().expect("failed to wait on child");
-                        if output.wait().unwrap().success() {
-                            println!("{}",format!("{} was encoded successfully with VMAF of {}!", file, vmaf_dec).green());
-                            break '_inner;
-                        } else {
-                            println!("{}",format!("{} was not encoded successfully with VMAF of {}! Retrying with VMAF of {}...", file, vmaf_dec, vmaf_dec-1).red());
-                            continue;
-                        }
                     }
                 }
             }
@@ -188,11 +192,9 @@ pub fn walk_count(dir: &String) -> usize {
         if e.metadata().unwrap().is_file() {
             let filepath = e.path().display();
             let str_filepath = filepath.to_string();
-            //println!("{}", filepath);
             let mime = find_mimetype(&str_filepath);
             if mime.to_string() == "VIDEO" {
                 count = count+1;
-                //println!("{}", e.path().display());
             }
         }
     }
@@ -208,10 +210,8 @@ pub fn walk_files(dir: &String) -> Vec<String>{
         if e.metadata().unwrap().is_file() {
             let filepath = e.path().display();
             let str_filepath = filepath.to_string();
-            //println!("{}", filepath);
             let mime = find_mimetype(&str_filepath);
             if mime.to_string() == "VIDEO" {
-                //println!("{}", e.path().display());
                 let file = absolute_path(&e.path().display().to_string());
                 arr.insert(index, file);
                 index = index + 1;
