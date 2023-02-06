@@ -114,8 +114,8 @@ pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, bar
         if file.contains("sample") {
             removed_files.push(file.to_string());
         }
-        // if file size is less than 1GB, remove it from the files vector
-        if Path::new(&file).metadata().unwrap().len() < 1000000000 {
+        // if file size is less than 400MB, remove it from the files vector
+        if Path::new(&file).metadata().unwrap().len() < 400000000 {
             removed_files.push(file.to_string());
         }
     }
