@@ -124,7 +124,9 @@ pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, bar
 
     // set progress bar to the number of files to process
     bar.set_length(files.len() as u64);
-    bar.inc(1);
+
+    // set progress bar to 0
+    bar.set_position(0);
 
     for file in files {
         let result = clear();
