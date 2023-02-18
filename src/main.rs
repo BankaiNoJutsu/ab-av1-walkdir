@@ -145,6 +145,7 @@ pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, bar
             .arg(vmaf.to_string())
             .arg("--acodec")
             .arg("aac")
+            .arg("--downmix-to-stereo")
             .arg("-e")
             .arg(&encoder)
             .spawn()
