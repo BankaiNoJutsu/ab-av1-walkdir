@@ -1,4 +1,4 @@
-use clap::{Parser};
+use clap::Parser;
 use std::{vec::Vec, string::String, env};
 use walkdir::WalkDir;
 use serde::{Serialize, Deserialize};
@@ -23,6 +23,18 @@ struct Args {
     // encoder
     #[clap(short, long, default_value = "libx265")]
     encoder: String,
+    // pixel format
+    #[clap(short, long, default_value = "x265-params=limit-sao,bframes=8,psy-rd=1,aq-mode=3")]
+    params_x265: String,
+    // pixel format
+    #[clap(short, long, default_value = "yuv420p10le")]
+    pix_fmt: String,
+    // preset x265
+    #[clap(short, long, default_value = "slow")]
+    preset_x265: String,
+    // preset x265
+    #[clap(short, long, default_value = "8")]
+    preset_av1: String,
 }
 
 fn main() {
@@ -30,6 +42,10 @@ fn main() {
     let folder = args.folder;
     let vmaf = args.vmaf;
     let encoder = args.encoder;
+    let params_x265 = args.params_x265;
+    let pix_fmt = args.pix_fmt;
+    let mut preset_x265 = args.preset_x265;
+    let preset_av1 = args.preset_av1;
     let codec = "x265".to_string();
 
     match encoder.as_str() {
@@ -43,6 +59,11 @@ fn main() {
             println!("{} is not a valid encoder!", encoder);
             std::process::exit(1);
         }
+    }
+
+    // if it's av1 then set preset to preset_av1
+    if encoder == "av1" {
+        preset_x265 = preset_av1;
     }
 
     // if folder is not a folder, exit
@@ -91,16 +112,16 @@ fn main() {
             std::process::exit(1);
         } else {
             // run ab-av1 for each file in the folder, with the given vmaf and encoder
-            process_sequential(to_process, vmaf, encoder, bar, codec);
+            process_sequential(to_process, vmaf, params_x265, pix_fmt, preset_x265, encoder, bar, codec);
         }
     } else {
         // run ab-av1 for each file in the folder, with the given vmaf and encoder
-        process_sequential(to_process, vmaf, encoder, bar, codec);
+        process_sequential(to_process, vmaf, encoder, params_x265, pix_fmt, preset_x265, bar, codec);
     }
 }
 
 // function to process all files in a given folder, but wait for each process to finish before starting the next one (sequential)
-pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, bar: ProgressBar, codec: String) {
+pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, params_x265: String, pix_fmt: String, preset_x265:String, bar: ProgressBar, codec: String) {
     let mut removed_files = Vec::new();
     for file in &files {
         if file.contains(&codec) {
@@ -148,6 +169,13 @@ pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, bar
             .arg("--downmix-to-stereo")
             .arg("-e")
             .arg(&encoder)
+            // if encoder is av1, remove the --enc parameter, else add --enc with the given params_x265
+            .arg(if encoder == "av1" {""} else {"--enc"})
+            .arg(if encoder == "av1" {""} else {&params_x265})
+            .arg("--pix-format")
+            .arg(&pix_fmt)
+            .arg("--preset")
+            .arg(&preset_x265)            
             .spawn()
             .expect("failed to execute process");
         output.wait().expect("failed to wait on child");
@@ -173,6 +201,13 @@ pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, bar
                         .arg((vmaf_dec).to_string())
                         .arg("-e")
                         .arg(&encoder)
+                        // if encoder is av1, remove the --enc parameter, else add --enc with the given params_x265
+                        .arg(if encoder == "av1" {""} else {"--enc"})
+                        .arg(if encoder == "av1" {""} else {&params_x265})
+                        .arg("--pix-format")
+                        .arg(&pix_fmt)
+                        .arg("--preset")
+                        .arg(&preset_x265)           
                         .spawn()
                         .expect("failed to execute process");
                     output.wait().expect("failed to wait on child");
