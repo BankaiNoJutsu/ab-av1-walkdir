@@ -18,9 +18,21 @@ struct Args {
     #[clap(short, long)]
     folder: String,
     // min vmaf
-    #[clap(short, long, default_value = "95")]
+    #[clap(short, long, default_value = "100")]
     vmaf: i8,
     // encoder
+    //  V....D libx265              libx265 H.265 / HEVC (codec hevc)
+    //  V....D av1_nvenc            NVIDIA NVENC av1 encoder (codec av1)
+    //  V....D h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
+    //  V....D hevc_nvenc           NVIDIA NVENC hevc encoder (codec hevc)
+    //  V..... hevc_qsv             HEVC (Intel Quick Sync Video acceleration) (codec hevc)
+    //  V..... vp9_qsv              VP9 video (Intel Quick Sync Video acceleration) (codec vp9)
+    //  V....D av1_amf              AMD AMF AV1 encoder (codec av1)
+    //  V....D h264_amf             AMD AMF H.264 Encoder (codec h264)
+    //  V....D hevc_amf             AMD AMF HEVC encoder (codec hevc)
+    //  V....D libaom-av1           libaom AV1 (codec av1)
+    //  V....D librav1e             librav1e AV1 (codec av1)
+    //  V..... libsvtav1            SVT-AV1(Scalable Video Technology for AV1) encoder (codec av1)
     #[clap(short, long, default_value = "libx265")]
     encoder: String,
     // pixel format
@@ -149,6 +161,27 @@ pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, par
     // set progress bar to 0
     bar.set_position(0);
 
+    // add:
+    // --svt <SVT_ARGS>
+    // Additional svt-av1 arg(s). E.g. --svt mbr=2000 --svt film-grain=8
+    // --enc <ENC_ARGS>
+    // Additional ffmpeg encoder arg(s). E.g. `--enc x265-params=lossless=1` These are added as ffmpeg output file options
+    // --max-encoded-percent <MAX_ENCODED_PERCENT>
+    // Maximum desired encoded size percentage of the input size [default: 80]
+    // --thorough
+    // Keep searching until a crf is found no more than min_vmaf+0.05 or all possibilities have been attempted
+    // --samples <SAMPLES>
+    // Number of 20s samples to use across the input video. Overrides --sample-every. More samples take longer but may provide a more accurate result
+    // --sample-every <SAMPLE_EVERY>
+    // Calculate number of samples by dividing the input duration by this value. So "12m" would mean with an input 25-36 minutes long, 3 samples would be used. More samples take longer but may provide a more accurate result [default: 12m]
+    // --min-samples <MIN_SAMPLES>
+    // Minimum number of samples. So at least this many samples will be used
+    // -o, --output <OUTPUT>
+    // Output file, by default the same as input with `.av1` before the extension
+    // --acodec <AUDIO_CODEC>
+    // Set the output ffmpeg audio codec. By default 'copy' is used. Otherwise, if re-encoding is necessary, 'libopus' is default
+    // --downmix-to-stereo
+    // Downmix input audio streams to stereo if input streams use greater than 3 channels
     for file in files {
         let result = clear();
         match result {
@@ -157,6 +190,13 @@ pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, par
                 println!("Error: {}", e);
             }
         }
+
+        // get the filename without the extension and the extension of the file to use it in the output filename
+        let stem = Path::new(&file).file_stem().unwrap().to_str().unwrap().to_string();
+        let extension = Path::new(&file).extension().unwrap().to_str().unwrap().to_string();
+        // add the codec and the vmaf score to the output filename
+        let output_filename = format!("{}.{}.{}.{}", stem, encoder, vmaf, extension);
+
         bar.inc(1);
         let mut output = std::process::Command::new("ab-av1.exe")
             .arg("auto-encode")
@@ -175,7 +215,9 @@ pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, par
             .arg("--pix-format")
             .arg(&pix_fmt)
             .arg("--preset")
-            .arg(&preset_x265)            
+            .arg(&preset_x265)
+            .arg("-o")
+            .arg(&output_filename)
             .spawn()
             .expect("failed to execute process");
         output.wait().expect("failed to wait on child");
@@ -192,6 +234,13 @@ pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, par
             // if ab-av1.exe fails with the error containing "Error: Failed to find a suitable crf", lower the vmaf by 1 and try again in a while loop
             '_inner: while output.wait().unwrap().success() == false {
                 for vmaf_dec in (1..vmaf).rev().step_by(1) {
+
+                    // get the filename without the extension and the extension of the file to use it in the output filename
+                    let stem = Path::new(&file).file_stem().unwrap().to_str().unwrap().to_string();
+                    let extension = Path::new(&file).extension().unwrap().to_str().unwrap().to_string();
+                    // add the codec and the vmaf score to the output filename
+                    let output_filename = format!("{}.{}.{}.{}", stem, encoder, vmaf_dec, extension);
+
                     // if ab-av1.exe fails with the error containing "Error: Failed to find a suitable crf", lower the vmaf by 1 and try again in a while loop
                     let mut output = std::process::Command::new("ab-av1.exe")
                         .arg("auto-encode")
@@ -207,7 +256,9 @@ pub fn process_sequential(mut files: Vec<String>, vmaf: i8, encoder: String, par
                         .arg("--pix-format")
                         .arg(&pix_fmt)
                         .arg("--preset")
-                        .arg(&preset_x265)           
+                        .arg(&preset_x265)
+                        .arg("-o")
+                        .arg(&output_filename)
                         .spawn()
                         .expect("failed to execute process");
                     output.wait().expect("failed to wait on child");
